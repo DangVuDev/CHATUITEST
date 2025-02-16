@@ -1,38 +1,118 @@
-.App {
+/* Toàn bộ container của ứng dụng chat */
+#chatContainer {
+  max-width: 600px;
+  margin: 20px auto;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+  font-family: 'Arial', sans-serif;
+}
+
+/* Tiêu đề của ứng dụng */
+#chatContainer h2 {
   text-align: center;
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #333;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+/* Container nhập token */
+#tokenContainer {
+  margin-bottom: 20px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+/* Input token */
+#tokenInput {
+  width: calc(100% - 20px);
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  outline: none;
+  font-size: 16px;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+/* Nút kết nối */
+button {
+  padding: 10px;
+  background-color: #007bff;
   color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-top: 10px;
+  width: 100%;
 }
 
-.App-link {
-  color: #61dafb;
+/* Hiệu ứng hover cho button */
+button:hover {
+  background-color: #0056b3;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Phần tin nhắn */
+#messages {
+  border: 1px solid #ddd;
+  padding: 10px;
+  margin-bottom: 20px;
+  height: 300px;
+  overflow-y: scroll;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+  font-size: 14px;
+  color: #333;
+}
+
+/* Mỗi tin nhắn */
+#messages > div {
+  margin-bottom: 10px;
+  padding: 10px;
+  background-color: #f0f0f0;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Hiển thị tên người gửi */
+#messages .nickname {
+  font-weight: bold;
+  color: #007bff;
+  font-size: 16px;
+}
+
+/* Hiển thị thời gian gửi */
+#messages .timestamp {
+  font-size: 0.9em;
+  color: #888;
+}
+
+/* Phần nhập tin nhắn */
+#sendForm {
+  display: flex;
+  margin-top: 10px;
+}
+
+#messageInput {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px 0 0 5px;
+  outline: none;
+  font-size: 16px;
+}
+
+#messageInput:focus {
+  border-color: #007bff;
+}
+
+#sendForm button {
+  padding: 10px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 0 5px 5px 0;
+  cursor: pointer;
+}
+
+#sendForm button:hover {
+  background-color: #0056b3;
 }
