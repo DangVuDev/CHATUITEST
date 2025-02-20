@@ -15,7 +15,7 @@ const ChatApp = () => {
   useEffect(() => {
     if (token) {
       const newConnection = new HubConnectionBuilder()
-        .withUrl('http://localhost:5176/chathub', {
+        .withUrl('https://hubt-social-develop.onrender.com/chathub', {
           accessTokenFactory: () => token,
         })
         .build();
