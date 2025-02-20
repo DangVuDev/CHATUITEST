@@ -1,61 +1,96 @@
 import React, { useState, useEffect } from 'react';
 import { HubConnectionBuilder } from '@microsoft/signalr';
 import './App.css';
+import axios from 'axios';
+
 
 const ChatApp = () => {
   const [connection, setConnection] = useState(null);
-  const [messages, setMessages] = useState([]);
   const [token, setToken] = useState('');
+  const [userName, setUserName] = useState('');
+  const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [groupId, setGroupId] = useState('');
   const [chatpRequestId, setchatpRequestId] = useState([]);
+  const [dataLogin, setDataLogin] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const [groupMessages, setGroupMessages] = useState({});
 
-  // Kết nối SignalR
-  useEffect(() => {
-    if (token) {
-      const newConnection = new HubConnectionBuilder()
-        .withUrl('https://hubt-social-develop.onrender.com/chathub', {
-          accessTokenFactory: () => token,
-        })
-        .build();
-
-      newConnection.start()
-        .then(() => {
-          console.log('SignalR connected.');
-          setIsConnected(true);
-        })
-        .catch(err => console.error('Connection error:', err));
-
-      // Lắng nghe tin nhắn từ server
-      // Lắng nghe tin nhắn từ server
-        newConnection.on('ReceiveChat', (chatItemResponse) => {
-          // Chuyển đổi đối tượng chatItemResponse thành chuỗi JSON
-          const chatItemString = JSON.stringify(chatItemResponse);
-          
-          console.log("chatItemResponse:", chatItemString);
-          // Cập nhật state với chuỗi JSON
-          setMessages(prevMessages => {
-            const updatedMessages = [
-              ...prevMessages,  // Duy trì các tin nhắn cũ
-              chatItemString,   // Thêm chuỗi JSON vào danh sách tin nhắn
-            ];
-            return updatedMessages;  // Trả về danh sách tin nhắn đã cập nhật
-
-          });
-          console.log(messages.length);
-        });
-
-      setConnection(newConnection);
-    }
-
-    // Cleanup when component unmounts
-    return () => {
-      if (connection) {
-        connection.stop();
+  const loginEffect = async () => {
+    try {
+      const response = await axios.post("https://hubt-social-develop.onrender.com/api/auth/sign-in", {
+        username: userName,
+        password: password
+      });
+  
+      const loginData = response.data;
+      setDataLogin(loginData);
+  
+      if (loginData?.userToken?.accessToken) {
+        setToken(loginData.userToken.accessToken);
       }
-    };
-  }, [token]);
+    } catch (error) {
+      console.error("Lỗi khi gọi API :", error);
+    }
+  };
+
+// Kết nối SignalR và lấy danh sách nhóm
+useEffect(() => {
+  if (!token) return;
+
+  const newConnection = new HubConnectionBuilder()
+    .withUrl('https://hubt-social-develop.onrender.com/chathub', {
+      accessTokenFactory: () => token,
+    })
+    .build();
+
+  newConnection.start()
+    .then(() => {
+      console.log('SignalR connected.');
+      setIsConnected(true);
+      setConnection(newConnection);
+
+      // Gọi API lấy danh sách nhóm sau khi kết nối thành công
+      axios.get("https://hubt-social-develop.onrender.com/api/chat/load-rooms", {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+      .then(response => {
+        setGroups(response.data); // Cập nhật danh sách nhóm
+        console.log(groups)
+      })
+      .catch(error => {
+        console.error("Lỗi khi tải danh sách group:", error);
+      });
+    })
+    .catch(err => console.error('Connection error:', err));
+
+  newConnection.on('ReceiveChat', (groupId,chatItemResponse) => {
+    console.log("Nhận tin nhắn từ server:", chatItemResponse);
+    //setMessages(prevMessages => [...prevMessages, JSON.stringify(chatItemResponse)]);
+    setGroupMessages((prev) =>(
+      {
+        ...prev,
+        [groupId]: [...(prev[groupId] || []),chatItemResponse]
+      }
+    ))
+  });
+
+  newConnection.on('ReceiveProcess', (id, status) => {
+    console.log("Process ID:", id, "Status:", status);
+  });
+
+  return () => {
+    if (newConnection) {
+      newConnection.stop();
+    }
+  };
+}, [token]);
+ // Khi `token` thay đổi, kết nối lại với SignalR
+  
 
   // Xử lý gửi tin nhắn
   const handleSendMessage = (e) => {
@@ -66,7 +101,7 @@ const ChatApp = () => {
       return;
     }
 
-    if (message.trim() && groupId.trim()) {
+    if (message.trim() && selectedGroup.trim()) {
       const MessageRequestId = crypto.randomUUID();
       setchatpRequestId(
         MessageRequestId =>
@@ -112,14 +147,29 @@ const ChatApp = () => {
     >
       <h2>SignalR Chat with Token</h2>
 
-      {/* Token Input */}
-      <div id="tokenContainer" style={{ marginBottom: '20px' }}>
+
+      {/* login */}
+      <div id="login" style={{ marginBottom: '20px' }}>
         <input
           type="text"
-          id="tokenInput"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder="Enter your token here..."
+          id="username"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          placeholder="Enter your username here..."
+          style={{
+            width: 'calc(100% - 20px)',
+            padding: '10px',
+            border: '1px solid #ddd',
+            borderRadius: '5px',
+            outline: 'none',
+          }}
+        />
+        <input
+          type="text"
+          id="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Enter your password here..."
           style={{
             width: 'calc(100% - 20px)',
             padding: '10px',
@@ -129,7 +179,7 @@ const ChatApp = () => {
           }}
         />
         <button
-          onClick={() => { if (token) setIsConnected(true); }}
+          onClick={loginEffect} // Chỉ cần gọi `loginEffect`, không cần kiểm tra null
           style={{
             padding: '10px',
             background: '#007bff',
@@ -140,13 +190,31 @@ const ChatApp = () => {
             marginTop: '10px',
           }}
         >
-          Connect
+          Login
         </button>
       </div>
 
       {/* UserName and GroupId Input */}
       {isConnected && (
         <>
+          <div>
+            <label>Chọn nhóm:</label>
+            <select value={selectedGroup} onChange={(e) => {
+              setSelectedGroup(e.target.value);
+              setGroupId(e.target.value); // Cập nhật luôn ô nhập GroupId nếu muốn
+            }}>
+              <option value="">-- Chọn nhóm --</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>{group.groupName}</option>
+              ))}
+            </select>
+
+            <br />
+
+            {/* <label>Nhập GroupId:</label>
+            <input type="text" value={selectedGroup} readOnly />  */}
+          </div>
+          
           <div style={{ marginBottom: '20px' }}>
             <input
               type="text"
@@ -178,16 +246,10 @@ const ChatApp = () => {
           borderRadius: "5px",
         }}
       >
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            style={{
-              marginBottom: "15px",
-              padding: "10px",
-              borderBottom: "1px solid #ddd",
-            }}
-          >
-            <p>{message}</p> {/* Hiển thị chuỗi JSON nguyên bản */}
+        {groupMessages[selectedGroup]?.map((message, index) => (
+          <div key={index} 
+            style={{ marginBottom: "15px", padding: "10px", borderBottom: "1px solid #ddd" }}>
+            <p>{JSON.stringify(message)}</p> {/* Hiển thị tin nhắn của nhóm được chọn */}
           </div>
         ))}
       </div>  
