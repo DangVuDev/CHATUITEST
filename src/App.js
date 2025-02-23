@@ -21,7 +21,7 @@ const ChatApp = () => {
   // Đăng nhập
   const loginEffect = async () => {
     try {
-      const response = await axios.post("http://localhost:5176/api/auth/sign-in", {
+      const response = await axios.post("https://hubt-social-develop.onrender.com/api/auth/sign-in", {
         username: userName,
         password: password,
       });
@@ -40,7 +40,7 @@ const ChatApp = () => {
     if (!token) return;
 
     const newConnection = new HubConnectionBuilder()
-      .withUrl("http://localhost:5176/chathub", {
+      .withUrl("https://hubt-social-develop.onrender.com/chathub", {
         accessTokenFactory: () => token,
       })
       .withAutomaticReconnect()
@@ -54,7 +54,7 @@ const ChatApp = () => {
         setConnection(newConnection);
 
         axios
-          .get("http://localhost:5176/api/chat/load-rooms", {
+          .get("https://hubt-social-develop.onrender.com/api/chat/load-rooms", {
             headers: { Authorization: `Bearer ${token}` },
           })
           .then((response) => setGroups(response.data))
@@ -83,7 +83,7 @@ const ChatApp = () => {
     if (selectedGroup && token) {
       console.log("GroupId: ",selectedGroup);
       axios
-        .get(`http://localhost:5176/api/chat/room/get-room-user?groupId=${selectedGroup}`, {
+        .get(`https://hubt-social-develop.onrender.com/api/chat/room/get-room-user?groupId=${selectedGroup}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((response) => {
