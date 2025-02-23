@@ -68,13 +68,13 @@ useEffect(() => {
     })
     .catch(err => console.error('Connection error:', err));
 
-  newConnection.on('ReceiveChat', (groupId,chatItemResponse) => {
-    console.log("Nhận tin nhắn từ server:", chatItemResponse);
+  newConnection.on('ReceiveChat', (res) => {
+    console.log("Nhận tin nhắn từ server:", res.message);
     //setMessages(prevMessages => [...prevMessages, JSON.stringify(chatItemResponse)]);
     setGroupMessages((prev) =>(
       {
         ...prev,
-        [groupId]: [...(prev[groupId] || []),chatItemResponse]
+        [res.groupId]: [...(prev[res.groupId] || []),res.message]
       }
     ))
   });
