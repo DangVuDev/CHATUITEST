@@ -229,6 +229,7 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
   const group = groups.find((g) => g.id === selectedGroup);
   const currentGroupData = groupData[selectedGroup] || { messages: [], users: [] };
 
+  // Hiển thị giao diện
   return (
     <div className="chat-area">
       <div className="chat-header">
