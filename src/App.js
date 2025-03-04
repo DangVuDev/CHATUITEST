@@ -4,7 +4,7 @@ import axios from "axios";
 import "./App.css";
 
 // Base API URL
-const BASE_API_URL = "http://localhost:5176";
+const BASE_API_URL = "https://hubt-social-develop.onrender.com";
 
 // Tạo axios instance bên ngoài component
 const createAxiosInstance = (token) =>
