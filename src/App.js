@@ -6,14 +6,14 @@ import "./App.css";
 // Base API URL
 const BASE_API_URL = "https://hubt-social-develop.onrender.com";
 
-// Tạo axios instance bên ngoài component
+// Tạo axios instance
 const createAxiosInstance = (token) =>
   axios.create({
     baseURL: BASE_API_URL,
     headers: { Authorization: token ? `Bearer ${token}` : undefined },
   });
 
-// Component cho màn hình đăng nhập
+// Component màn hình đăng nhập
 const LoginScreen = ({ onLogin }) => {
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
@@ -61,7 +61,7 @@ const LoginScreen = ({ onLogin }) => {
   );
 };
 
-// Component cho danh sách nhóm
+// Component danh sách nhóm
 const GroupList = ({ groups, selectedGroup, onSelectGroup }) => (
   <div className="group-list">
     <h3>Chats</h3>
@@ -83,14 +83,13 @@ const GroupList = ({ groups, selectedGroup, onSelectGroup }) => (
   </div>
 );
 
-// Component cho khu vực chat
+// Component khu vực chat
 const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setGroupData }) => {
   const [message, setMessage] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const fileInputRef = useRef(null);
   const messagesContainerRef = useRef(null);
-  const topMessageRef = useRef(null);
 
   const scrollToBottom = useCallback(() => {
     if (messagesContainerRef.current) {
@@ -132,7 +131,6 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
       reader.onload = async () => {
         const base64File = reader.result.split(",")[1];
         const payloadSizeMB = (base64File.length * 3) / 4 / 1024 / 1024;
-        console.log("Base64 length:", base64File.length, "Estimated size (MB):", payloadSizeMB);
 
         if (payloadSizeMB > 10) {
           console.error("File exceeds 10MB limit for SignalR.");
@@ -171,11 +169,11 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
     if (!messagesContainerRef.current || isLoadingMore) return;
 
     const { scrollTop } = messagesContainerRef.current;
-    if (scrollTop === 0 && groupData[selectedGroup]?.lastBlockId) {
+    if (scrollTop < 100) {
       setIsLoadingMore(true);
       onLoadMoreMessages();
     }
-  }, [groupData, selectedGroup, isLoadingMore]);
+  }, [isLoadingMore]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -186,24 +184,26 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
   }, [handleScroll]);
 
   const onLoadMoreMessages = useCallback(async () => {
-    if (!selectedGroup || !groupData[selectedGroup]?.lastBlockId) {
+    if (!selectedGroup) {
       setIsLoadingMore(false);
       return;
     }
 
+    const currentQuantity = groupData[selectedGroup]?.messages?.length || 0;
+    const limit = 50;
+
     try {
       const { data } = await createAxiosInstance(token).get(
-        `/api/chat/room/get-history?ChatRoomId=${selectedGroup}&LastBlockId=${groupData[selectedGroup].lastBlockId}`
+        `/api/chat/room/get-history?ChatRoomId=${selectedGroup}&CurrentQuantity=${currentQuantity}&Limit=${limit}`
       );
 
-      const newMessages = data?.messages || data?.HistoryChat?.flatMap((block) => block.Data) || [];
+      const newMessages = data?.message || [];
       if (newMessages.length > 0) {
         setGroupData((prev) => ({
           ...prev,
           [selectedGroup]: {
             ...prev[selectedGroup],
             messages: [...newMessages, ...(prev[selectedGroup]?.messages || [])],
-            lastBlockId: data?.blockId || data?.BlockId || "",
           },
         }));
       }
@@ -229,7 +229,6 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
   const group = groups.find((g) => g.id === selectedGroup);
   const currentGroupData = groupData[selectedGroup] || { messages: [], users: [] };
 
-  // Hiển thị giao diện
   return (
     <div className="chat-area">
       <div className="chat-header">
@@ -240,7 +239,7 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
         {currentGroupData.isLoading ? (
           <p>Loading messages...</p>
         ) : currentGroupData.messages.length > 0 ? (
-          currentGroupData.messages.map((msg, index) => {
+          currentGroupData.messages.map((msg) => {
             const sender = currentGroupData.users.find((u) => u.id === msg.sentBy) || {
               name: "Unknown",
               profilePhoto: "https://default.com/profile.jpg",
@@ -249,7 +248,6 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
             return (
               <div
                 key={msg.id}
-                ref={index === 0 ? topMessageRef : null}
                 className={`message ${isCurrentUser ? "current-user" : "other-user"}`}
               >
                 <img src={sender.profilePhoto} alt={sender.name} />
@@ -325,14 +323,17 @@ const ChatApp = () => {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [groupData, setGroupData] = useState({});
-  const [loadedGroups, setLoadedGroups] = useState(new Set());
+  const loadedGroupsRef = useRef(new Set()); // Theo dõi nhóm đã load
   const connectionRef = useRef(null);
+  const prevSelectedGroupRef = useRef(""); // Theo dõi nhóm trước đó
 
   const axiosInstance = createAxiosInstance(token);
 
+  // Thiết lập kết nối SignalR
   useEffect(() => {
     if (!token || connectionRef.current) return;
 
+    console.log("Initializing SignalR connection...");
     const connect = new HubConnectionBuilder()
       .withUrl(`${BASE_API_URL}/chathub`, { accessTokenFactory: () => token })
       .withAutomaticReconnect()
@@ -369,53 +370,66 @@ const ChatApp = () => {
 
     return () => {
       if (connectionRef.current) {
-        connectionRef.current.stop().catch((err) => console.error("Error stopping SignalR:", err.message));
+        connectionRef.current.stop().catch((err) =>
+          console.error("Error stopping SignalR:", err.message)
+        );
         connectionRef.current = null;
       }
     };
   }, [token]);
 
+  // Hàm tải dữ liệu nhóm
   const loadGroupData = useCallback(
     async (groupId) => {
-      if (!groupId || loadedGroups.has(groupId)) return;
+      if (!groupId) {
+        console.log("No groupId provided, skipping load...");
+        return;
+      }
 
-      console.log(`Loading initial data for group: ${groupId}`);
+      if (loadedGroupsRef.current.has(groupId)) {
+        console.log(`Group ${groupId} already loaded, skipping...`);
+        return;
+      }
+
+      console.log(`Loading data for group ${groupId} at ${new Date().toISOString()}`);
       setGroupData((prev) => ({ ...prev, [groupId]: { ...prev[groupId], isLoading: true } }));
 
       try {
         const [usersResponse, historyResponse] = await Promise.all([
           axiosInstance.get(`/api/chat/room/get-room-user?groupId=${groupId}`),
-          axiosInstance.get(
-            `/api/chat/room/get-history?ChatRoomId=${groupId}&LastBlockId=${
-              groupData[groupId]?.lastBlockId || ""
-            }`
-          ),
+          axiosInstance.get(`/api/chat/room/get-history?ChatRoomId=${groupId}&CurrentQuantity=0&Limit=10`),
         ]);
+
+        console.log(`Loaded users for ${groupId}:`, usersResponse.data);
+        console.log(`Loaded history for ${groupId}:`, historyResponse.data);
 
         setGroupData((prev) => ({
           ...prev,
           [groupId]: {
             users: usersResponse.data || [],
-            messages: historyResponse.data?.messages || historyResponse.data?.HistoryChat?.flatMap((block) => block.Data) || [],
-            lastBlockId: historyResponse.data?.blockId || historyResponse.data?.BlockId || "",
+            messages: historyResponse.data || [],
             isLoading: false,
           },
         }));
-        setLoadedGroups((prev) => new Set(prev).add(groupId));
+        loadedGroupsRef.current.add(groupId);
       } catch (error) {
-        console.error("Error loading group data:", error.message);
+        console.error(`Error loading group ${groupId}:`, error.message);
         setGroupData((prev) => ({ ...prev, [groupId]: { ...prev[groupId], isLoading: false } }));
       }
     },
-    [axiosInstance, groupData, loadedGroups]
+    [axiosInstance]
   );
 
+  // Theo dõi thay đổi selectedGroup và tải dữ liệu
   useEffect(() => {
-    if (selectedGroup) {
+    console.log(`selectedGroup changed to: ${selectedGroup}`);
+    if (selectedGroup && selectedGroup !== prevSelectedGroupRef.current) {
       loadGroupData(selectedGroup);
+      prevSelectedGroupRef.current = selectedGroup;
     }
   }, [selectedGroup, loadGroupData]);
 
+  // Gửi tin nhắn qua SignalR
   const sendMessage = useCallback(
     async (payload) => {
       if (!connection || !selectedGroup) {
@@ -448,15 +462,19 @@ const ChatApp = () => {
         <LoginScreen onLogin={setToken} />
       ) : (
         <div className="messenger-layout">
-          <GroupList groups={groups} selectedGroup={selectedGroup} onSelectGroup={setSelectedGroup} />
+          <GroupList
+            groups={groups}
+            selectedGroup={selectedGroup}
+            onSelectGroup={setSelectedGroup}
+          />
           {isConnected && (
             <ChatArea
               groupData={groupData}
               selectedGroup={selectedGroup}
               groups={groups}
               onSendMessage={sendMessage}
-              token={token} // Truyền token xuống
-              setGroupData={setGroupData} // Truyền setGroupData xuống
+              token={token}
+              setGroupData={setGroupData}
             />
           )}
         </div>
@@ -466,3 +484,4 @@ const ChatApp = () => {
 };
 
 export default ChatApp;
+//const BASE_API_URL = "https://hubt-social-develop.onrender.com";
