@@ -4,7 +4,7 @@ import axios from "axios";
 import "./App.css";
 
 // Base API URL
-const BASE_API_URL = "https://localhost:7121";
+const BASE_API_URL = "https://hubt-microserivce-2.onrender.com";
 
 // Tạo axios instance
 const createAxiosInstance = (token) =>
@@ -22,7 +22,7 @@ const LoginScreen = ({ onLogin }) => {
     async (e) => {
       e.preventDefault();
       try {
-        const { data } = await axios.post(`https://localhost:7245/api/auth/sign-in`, {
+        const { data } = await axios.post(`https://hubt-microserivce-25mh.onrender.com/api/auth/sign-in`, {
           username: userName,
           password,
         });
@@ -357,7 +357,7 @@ const ChatApp = () => {
 
     console.log("Initializing SignalR connection...");
     const connect = new HubConnectionBuilder()
-      .withUrl(`https://localhost:7165/chathub`, { accessTokenFactory: () => token })
+      .withUrl(`https://hubt-microserivce-chatdata-exl7.onrender.com/chathub`, { accessTokenFactory: () => token })
       .withAutomaticReconnect()
       .build();
 
