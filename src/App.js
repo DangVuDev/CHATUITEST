@@ -4,16 +4,16 @@ import axios from "axios";
 import "./App.css";
 
 // Base API URL
-const BASE_API_URL = "http://localhost:5176";
+const BASE_API_URL = "https://localhost:7121";
 
-// Tạo axios instance bên ngoài component
+// Tạo axios instance
 const createAxiosInstance = (token) =>
   axios.create({
     baseURL: BASE_API_URL,
     headers: { Authorization: token ? `Bearer ${token}` : undefined },
   });
 
-// Component cho màn hình đăng nhập
+// Component màn hình đăng nhập
 const LoginScreen = ({ onLogin }) => {
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +22,7 @@ const LoginScreen = ({ onLogin }) => {
     async (e) => {
       e.preventDefault();
       try {
-        const { data } = await axios.post(`${BASE_API_URL}/api/auth/sign-in`, {
+        const { data } = await axios.post(`https://localhost:7245/api/auth/sign-in`, {
           username: userName,
           password,
         });
@@ -61,7 +61,7 @@ const LoginScreen = ({ onLogin }) => {
   );
 };
 
-// Component cho danh sách nhóm
+// Component danh sách nhóm
 const GroupList = ({ groups, selectedGroup, onSelectGroup }) => (
   <div className="group-list">
     <h3>Chats</h3>
@@ -83,14 +83,13 @@ const GroupList = ({ groups, selectedGroup, onSelectGroup }) => (
   </div>
 );
 
-// Component cho khu vực chat
+// Component khu vực chat
 const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setGroupData }) => {
   const [message, setMessage] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const fileInputRef = useRef(null);
   const messagesContainerRef = useRef(null);
-  const topMessageRef = useRef(null);
 
   const scrollToBottom = useCallback(() => {
     if (messagesContainerRef.current) {
@@ -101,7 +100,7 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
   const handleSendMessage = useCallback(
     async (e) => {
       e.preventDefault();
-      if (!message.trim()) return;
+      if (!message.trim() || !selectedGroup) return;
 
       const payload = {
         RequestId: crypto.randomUUID(),
@@ -118,6 +117,7 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
         scrollToBottom();
       } catch (error) {
         console.error("Error sending message:", error.message);
+        alert("Failed to send message. Please try again.");
       }
     },
     [message, onSendMessage, selectedGroup, scrollToBottom]
@@ -126,13 +126,12 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
   const handleFileChange = useCallback(
     async (e) => {
       const file = e.target.files[0];
-      if (!file) return;
+      if (!file || !selectedGroup) return;
 
       const reader = new FileReader();
       reader.onload = async () => {
         const base64File = reader.result.split(",")[1];
         const payloadSizeMB = (base64File.length * 3) / 4 / 1024 / 1024;
-        console.log("Base64 length:", base64File.length, "Estimated size (MB):", payloadSizeMB);
 
         if (payloadSizeMB > 10) {
           console.error("File exceeds 10MB limit for SignalR.");
@@ -154,9 +153,13 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
           scrollToBottom();
         } catch (error) {
           console.error("Error sending file:", error.message);
+          alert("Failed to send file. Please try again.");
         }
       };
-      reader.onerror = (error) => console.error("FileReader error:", error.message);
+      reader.onerror = (error) => {
+        console.error("FileReader error:", error.message);
+        alert("Error reading file. Please try again.");
+      };
       reader.readAsDataURL(file);
     },
     [onSendMessage, selectedGroup, scrollToBottom]
@@ -167,56 +170,45 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
     setShowEmojiPicker(false);
   }, []);
 
-  const handleScroll = useCallback(() => {
-    if (!messagesContainerRef.current || isLoadingMore) return;
+  const loadMoreMessages = useCallback(async () => {
+    if (!selectedGroup) return;
 
-    const { scrollTop } = messagesContainerRef.current;
-    if (scrollTop === 0 && groupData[selectedGroup]?.lastBlockId) {
-      setIsLoadingMore(true);
-      onLoadMoreMessages();
-    }
-  }, [groupData, selectedGroup, isLoadingMore]);
-
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (container) {
-      container.addEventListener("scroll", handleScroll);
-      return () => container.removeEventListener("scroll", handleScroll);
-    }
-  }, [handleScroll]);
-
-  const onLoadMoreMessages = useCallback(async () => {
-    if (!selectedGroup || !groupData[selectedGroup]?.lastBlockId) {
-      setIsLoadingMore(false);
-      return;
-    }
+    const currentQuantity = groupData[selectedGroup]?.messages?.length || 0;
+    const limit = 50;
 
     try {
+      console.log(`Loading more messages for group ${selectedGroup}...`);
       const { data } = await createAxiosInstance(token).get(
-        `/api/chat/room/get-history?ChatRoomId=${selectedGroup}&LastBlockId=${groupData[selectedGroup].lastBlockId}`
+        `/api/chat/room/get-history?ChatRoomId=${selectedGroup}&CurrentQuantity=${currentQuantity}&Limit=${limit}`
       );
+      console.log("Load more messages response:", data);
 
-      const newMessages = data?.messages || data?.HistoryChat?.flatMap((block) => block.Data) || [];
+      const newMessages = Array.isArray(data) ? data : []; // Trực tiếp lấy mảng
       if (newMessages.length > 0) {
-        setGroupData((prev) => ({
-          ...prev,
-          [selectedGroup]: {
+        setGroupData((prev) => {
+          const updatedGroup = {
             ...prev[selectedGroup],
             messages: [...newMessages, ...(prev[selectedGroup]?.messages || [])],
-            lastBlockId: data?.blockId || data?.BlockId || "",
-          },
-        }));
+          };
+          console.log("Updated groupData after load more:", { ...prev, [selectedGroup]: updatedGroup });
+          return { ...prev, [selectedGroup]: updatedGroup };
+        });
+        setHasMoreMessages(newMessages.length === limit);
+      } else {
+        setHasMoreMessages(false);
       }
     } catch (error) {
-      console.error("Error loading more messages:", error.message);
-    } finally {
-      setIsLoadingMore(false);
+      console.error("Error loading more messages:", error.response?.data || error.message);
+      alert("Failed to load more messages. Please try again.");
     }
   }, [selectedGroup, groupData, token, setGroupData]);
 
   useEffect(() => {
+    console.log("Current groupData in ChatArea:", groupData);
+    console.log("Selected group:", selectedGroup);
+    console.log("Messages for selected group:", groupData[selectedGroup]?.messages);
     scrollToBottom();
-  }, [groupData[selectedGroup]?.messages, scrollToBottom]);
+  }, [groupData, selectedGroup, scrollToBottom]);
 
   if (!selectedGroup) {
     return (
@@ -227,55 +219,77 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
   }
 
   const group = groups.find((g) => g.id === selectedGroup);
-  const currentGroupData = groupData[selectedGroup] || { messages: [], users: [] };
+  const currentGroupData = groupData[selectedGroup] || { messages: [], users: [], error: null };
 
-  // Hiển thị giao diện
+  if (currentGroupData.error) {
+    return (
+      <div className="chat-area">
+        <div className="chat-header">
+          <h3>{group?.groupName || "Loading..."}</h3>
+        </div>
+        <div className="error-message">
+          <p>Error: {currentGroupData.error}</p>
+          <button onClick={() => loadMoreMessages(selectedGroup)}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="chat-area">
       <div className="chat-header">
         <h3>{group?.groupName || "Loading..."}</h3>
       </div>
       <div className="messages-container" ref={messagesContainerRef}>
-        {isLoadingMore && <p>Loading more messages...</p>}
         {currentGroupData.isLoading ? (
           <p>Loading messages...</p>
-        ) : currentGroupData.messages.length > 0 ? (
-          currentGroupData.messages.map((msg, index) => {
-            const sender = currentGroupData.users.find((u) => u.id === msg.sentBy) || {
-              name: "Unknown",
-              profilePhoto: "https://default.com/profile.jpg",
-            };
-            const isCurrentUser = msg.sentBy === currentGroupData.users[0]?.id;
-            return (
-              <div
-                key={msg.id}
-                ref={index === 0 ? topMessageRef : null}
-                className={`message ${isCurrentUser ? "current-user" : "other-user"}`}
-              >
-                <img src={sender.profilePhoto} alt={sender.name} />
-                <div className="message-content">
-                  <p className="sender-name">{sender.name}</p>
-                  {msg.message && <p>{msg.message}</p>}
-                  {msg.medias?.length > 0 && (
-                    <img
-                      src={`data:image/jpeg;base64,${msg.medias[0]}`}
-                      alt="Uploaded"
-                      className="message-media"
-                      style={{ maxWidth: "200px", borderRadius: "8px" }}
-                    />
-                  )}
-                  <span>{new Date(msg.createdAt).toLocaleTimeString()}</span>
-                </div>
-              </div>
-            );
-          })
         ) : (
-          <p>No messages yet.</p>
+          <>
+            {hasMoreMessages && currentGroupData.messages.length > 0 && (
+              <button className="load-more-button" onClick={loadMoreMessages}>
+                Load More Messages
+              </button>
+            )}
+            {currentGroupData.messages.length > 0 ? (
+              currentGroupData.messages.map((msg) => {
+                const sender = currentGroupData.users.find((u) => u.id === msg.sentBy) || {
+                  name: "Unknown",
+                  profilePhoto: "https://default.com/profile.jpg",
+                };
+                const isCurrentUser = msg.sentBy === currentGroupData.users[0]?.id;
+                return (
+                  <div
+                    key={msg.id}
+                    className={`message ${isCurrentUser ? "current-user" : "other-user"}`}
+                  >
+                    <img src={sender.profilePhoto} alt={sender.name} className="avatar" />
+                    <div className="message-content">
+                      <p className="sender-name">{sender.name}</p>
+                      {msg.message && <p>{msg.message}</p>}
+                      {msg.medias?.length > 0 && (
+                        <img
+                          src={`data:image/jpeg;base64,${msg.medias[0]}`}
+                          alt="Uploaded"
+                          className="message-media"
+                          style={{ maxWidth: "200px", borderRadius: "8px" }}
+                        />
+                      )}
+                      <span className="timestamp">
+                        {new Date(msg.createdAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p>No messages yet.</p>
+            )}
+          </>
         )}
       </div>
       <form onSubmit={handleSendMessage} className="message-form">
         <div className="icon-buttons">
-          <button type="button" onClick={() => fileInputRef.current?.click()}>
+          <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach file">
             📁
           </button>
           <input
@@ -290,6 +304,7 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
           <span
             className="input-icon"
             onClick={() => setShowEmojiPicker((prev) => !prev)}
+            title="Add emoji"
           >
             😊
           </span>
@@ -297,19 +312,25 @@ const ChatArea = ({ groupData, selectedGroup, groups, onSendMessage, token, setG
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Aa"
+            placeholder="Type a message..."
+            disabled={!selectedGroup}
           />
           {showEmojiPicker && (
             <div className="emoji-picker">
               {["😊", "😂", "❤️", "👍", "😍", "😢", "😡", "🎉"].map((emoji) => (
-                <span key={emoji} onClick={() => addEmoji(emoji)} className="emoji">
+                <span
+                  key={emoji}
+                  onClick={() => addEmoji(emoji)}
+                  className="emoji"
+                  title={`Add ${emoji}`}
+                >
                   {emoji}
                 </span>
               ))}
             </div>
           )}
         </div>
-        <button type="submit" className="send-button">
+        <button type="submit" className="send-button" disabled={!message.trim()}>
           ➤
         </button>
       </form>
@@ -325,16 +346,18 @@ const ChatApp = () => {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [groupData, setGroupData] = useState({});
-  const [loadedGroups, setLoadedGroups] = useState(new Set());
+  const loadedGroupsRef = useRef(new Set());
   const connectionRef = useRef(null);
+  const prevSelectedGroupRef = useRef("");
 
   const axiosInstance = createAxiosInstance(token);
 
   useEffect(() => {
     if (!token || connectionRef.current) return;
 
+    console.log("Initializing SignalR connection...");
     const connect = new HubConnectionBuilder()
-      .withUrl(`${BASE_API_URL}/chathub`, { accessTokenFactory: () => token })
+      .withUrl(`https://localhost:7165/chathub`, { accessTokenFactory: () => token })
       .withAutomaticReconnect()
       .build();
 
@@ -348,6 +371,7 @@ const ChatApp = () => {
         setIsConnected(true);
 
         const { data } = await axiosInstance.get("/api/chat/load-rooms?page=1&limit=10");
+        console.log("Loaded groups:", data);
         setGroups(data);
       } catch (err) {
         console.error("SignalR connection error:", err.message);
@@ -358,18 +382,21 @@ const ChatApp = () => {
 
     connect.on("ReceiveChat", (res) => {
       console.log("Received chat:", res);
-      setGroupData((prev) => ({
-        ...prev,
-        [res.groupId]: {
+      setGroupData((prev) => {
+        const updatedGroup = {
           ...prev[res.groupId],
           messages: [...(prev[res.groupId]?.messages || []), res.message],
-        },
-      }));
+        };
+        console.log("Updated groupData after receiving chat:", { ...prev, [res.groupId]: updatedGroup });
+        return { ...prev, [res.groupId]: updatedGroup };
+      });
     });
 
     return () => {
       if (connectionRef.current) {
-        connectionRef.current.stop().catch((err) => console.error("Error stopping SignalR:", err.message));
+        connectionRef.current.stop().catch((err) =>
+          console.error("Error stopping SignalR:", err.message)
+        );
         connectionRef.current = null;
       }
     };
@@ -377,42 +404,64 @@ const ChatApp = () => {
 
   const loadGroupData = useCallback(
     async (groupId) => {
-      if (!groupId || loadedGroups.has(groupId)) return;
+      if (!groupId || loadedGroupsRef.current.has(groupId)) {
+        console.log(`Skipping load for group ${groupId}`);
+        return;
+      }
 
-      console.log(`Loading initial data for group: ${groupId}`);
-      setGroupData((prev) => ({ ...prev, [groupId]: { ...prev[groupId], isLoading: true } }));
+      console.log(`Starting load for group ${groupId} at ${new Date().toISOString()}`);
+      setGroupData((prev) => ({
+        ...prev,
+        [groupId]: { ...prev[groupId], isLoading: true, error: null },
+      }));
 
       try {
         const [usersResponse, historyResponse] = await Promise.all([
           axiosInstance.get(`/api/chat/room/get-room-user?groupId=${groupId}`),
-          axiosInstance.get(
-            `/api/chat/room/get-history?ChatRoomId=${groupId}&LastBlockId=${
-              groupData[groupId]?.lastBlockId || ""
-            }`
-          ),
+          axiosInstance.get(`/api/chat/room/get-history?ChatRoomId=${groupId}&CurrentQuantity=0&Limit=10`),
         ]);
 
+        console.log(`API response for users (${groupId}):`, usersResponse.data);
+        console.log(`API response for history (${groupId}):`, historyResponse.data);
+
+        const usersData = usersResponse.data;
+        const historyData = Array.isArray(historyResponse.data) ? historyResponse.data : []; // Trực tiếp lấy mảng
+
+        if (!usersData || !Array.isArray(historyData)) {
+          throw new Error("Invalid response data from API");
+        }
+
+        setGroupData((prev) => {
+          const updatedGroup = {
+            users: usersData,
+            messages: historyData,
+            isLoading: false,
+            error: null,
+          };
+          console.log("Updated groupData after load:", { ...prev, [groupId]: updatedGroup });
+          return { ...prev, [groupId]: updatedGroup };
+        });
+        loadedGroupsRef.current.add(groupId);
+      } catch (error) {
+        console.error(`Failed to load group ${groupId}:`, error.response?.data || error.message);
         setGroupData((prev) => ({
           ...prev,
           [groupId]: {
-            users: usersResponse.data || [],
-            messages: historyResponse.data?.messages || historyResponse.data?.HistoryChat?.flatMap((block) => block.Data) || [],
-            lastBlockId: historyResponse.data?.blockId || historyResponse.data?.BlockId || "",
+            ...prev[groupId],
             isLoading: false,
+            error: error.message || "Failed to load group data",
           },
         }));
-        setLoadedGroups((prev) => new Set(prev).add(groupId));
-      } catch (error) {
-        console.error("Error loading group data:", error.message);
-        setGroupData((prev) => ({ ...prev, [groupId]: { ...prev[groupId], isLoading: false } }));
       }
     },
-    [axiosInstance, groupData, loadedGroups]
+    [axiosInstance]
   );
 
   useEffect(() => {
-    if (selectedGroup) {
+    console.log(`selectedGroup changed to: ${selectedGroup}`);
+    if (selectedGroup && selectedGroup !== prevSelectedGroupRef.current) {
       loadGroupData(selectedGroup);
+      prevSelectedGroupRef.current = selectedGroup;
     }
   }, [selectedGroup, loadGroupData]);
 
@@ -448,15 +497,19 @@ const ChatApp = () => {
         <LoginScreen onLogin={setToken} />
       ) : (
         <div className="messenger-layout">
-          <GroupList groups={groups} selectedGroup={selectedGroup} onSelectGroup={setSelectedGroup} />
+          <GroupList
+            groups={groups}
+            selectedGroup={selectedGroup}
+            onSelectGroup={setSelectedGroup}
+          />
           {isConnected && (
             <ChatArea
               groupData={groupData}
               selectedGroup={selectedGroup}
               groups={groups}
               onSendMessage={sendMessage}
-              token={token} // Truyền token xuống
-              setGroupData={setGroupData} // Truyền setGroupData xuống
+              token={token}
+              setGroupData={setGroupData}
             />
           )}
         </div>
